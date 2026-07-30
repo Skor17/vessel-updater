@@ -33,13 +33,22 @@ if uploaded_sheet and uploaded_db:
 
             def force_date(v):
                 v_str = str(v).strip()
-                if not v_str or v_str.lower() == 'nan': return None
+                # Catch all forms of empty or invalid data that Excel creates
+                if not v_str or v_str.lower() in ['nan', 'nat', 'none', 'null', '']: 
+                    return None
                 try:
-                    return pd.to_datetime(v_str).strftime('%Y-%m-%d')
+                    # errors='coerce' forces bad dates to become blank instead of crashing
+                    dt = pd.to_datetime(v_str, errors='coerce')
+                    if pd.isna(dt): 
+                        return v_str.split(' ')[0]
+                    return dt.strftime('%Y-%m-%d')
                 except:
                     return v_str.split(' ')[0]
 
             db_df['CLEAN_KEY'] = db_df[DB_ID_COL].apply(clean_key)
+            
+            # CRITICAL FIX: If there are duplicates in the DB, always keep the LAST one (the newest)
+            db_df = db_df.drop_duplicates(subset=['CLEAN_KEY'], keep='last')
             db_indexed = db_df.set_index('CLEAN_KEY')
 
             updated_count = 0
@@ -51,32 +60,32 @@ if uploaded_sheet and uploaded_db:
 
                 if match_id:
                     row = db_indexed.loc[match_id]
-                    if isinstance(row, pd.DataFrame): row = row.iloc[0]
-                    
-                    # --- CONDITIONAL OVERWRITE ---
-                    # Only update if the database value is NOT empty
                     
                     # Column A (Name)
                     val = row.get(DB_NAME_COL, '')
-                    if val and str(val).strip(): sheet_df.iat[i, 0] = str(val).strip()
+                    if val and str(val).strip() and str(val).strip().lower() != 'nan': 
+                        sheet_df.iat[i, 0] = str(val).strip()
                     
                     # Column C (IMO)
                     val = row.get(DB_IMO_COL, '')
-                    if val and str(val).strip(): sheet_df.iat[i, 2] = str(val).strip()
+                    if val and str(val).strip() and str(val).strip().lower() != 'nan': 
+                        sheet_df.iat[i, 2] = str(val).strip()
                     
                     # Column E (Handover)
                     val = row.get(DB_HANDOVER_COL, '')
                     formatted_val = force_date(val)
-                    if formatted_val: sheet_df.iat[i, 4] = formatted_val
+                    if formatted_val: 
+                        sheet_df.iat[i, 4] = formatted_val
                     
                     # Column H (Shop Test)
                     val = row.get(DB_SHOPTEST_COL, '')
                     formatted_val = force_date(val)
-                    if formatted_val: sheet_df.iat[i, 7] = formatted_val
+                    if formatted_val: 
+                        sheet_df.iat[i, 7] = formatted_val
                     
                     updated_count += 1
 
-            st.success(f"✅ Success! Processed {updated_count} matches. Existing data was preserved where DB data was missing.")
+            st.success(f"✅ Success! Processed {updated_count} matches. Data preserved where DB was empty.")
             
             output = io.BytesIO()
             sheet_df.to_excel(output, index=False)
