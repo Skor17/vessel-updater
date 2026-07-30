@@ -5,14 +5,14 @@ import io
 # --- CONFIGURATION ---
 BOSS_NAME = "Xu Zhi Jun"
 
-# CSV Database Column Names
+# Database CSV Column Names
 DB_ID_COL = 'DB Number'
 DB_NAME_COL = 'Vessel_Name'
 DB_IMO_COL = 'IMO_Number'
 DB_HANDOVER_COL = 'Handover_Date'
 DB_SHOPTEST_COL = 'Shop_Test_Date' 
 
-# Excel Column Mapping
+# Exact Column Index Mapping (0-indexed: A=0, B=1, C=2, D=3, E=4, F=5, G=6, H=7)
 EXCEL_COL_NAME = 0         # Column A
 EXCEL_COL_IMO = 2          # Column C
 EXCEL_COL_HANDOVER = 4     # Column E
@@ -29,7 +29,6 @@ uploaded_db = st.file_uploader("Upload CSV Database (db_sample.csv)", type=['csv
 
 if uploaded_sheet and uploaded_db:
     
-    # Process Button
     if st.button("🚀 Process & Create Updated File", use_container_width=True):
         try:
             sheet_df = pd.read_excel(uploaded_sheet)
@@ -49,9 +48,10 @@ if uploaded_sheet and uploaded_db:
                 if not v_str or v_str.lower() in ['nan', 'nat', 'none', 'null', '']: return None
                 try:
                     dt = pd.to_datetime(v_str, errors='coerce')
-                    return dt.strftime('%Y-%m-%d') if pd.notna(dt) else v_str.split(' ')[0]
+                    # If it's a date, format it. If it's a word (like "planned"), keep it.
+                    return dt.strftime('%Y-%m-%d') if pd.notna(dt) else v_str
                 except:
-                    return v_str.split(' ')[0]
+                    return v_str
 
             def get_best_val(row_dict, target_col):
                 clean_target = target_col.replace('_', '').replace(' ', '').lower()
@@ -79,11 +79,24 @@ if uploaded_sheet and uploaded_db:
                     row = db_indexed.loc[match_id]
                     row_dict = row.to_dict() if not isinstance(row, pd.DataFrame) else {col: row[col].tolist()[-1] for col in row.columns}
                     
-                    # Updates
-                    if val := get_best_val(row_dict, DB_NAME_COL): sheet_df.iat[i, EXCEL_COL_NAME] = str(val).strip()
-                    if val := get_best_val(row_dict, DB_IMO_COL): sheet_df.iat[i, EXCEL_COL_IMO] = str(val).strip()
-                    if val := force_date(get_best_val(row_dict, DB_HANDOVER_COL)): sheet_df.iat[i, EXCEL_COL_HANDOVER] = val
-                    if val := force_date(get_best_val(row_dict, DB_SHOPTEST_COL)): sheet_df.iat[i, EXCEL_COL_SHOPTEST] = val
+                    # Update Vessel Name
+                    if val := get_best_val(row_dict, DB_NAME_COL): 
+                        sheet_df.iat[i, EXCEL_COL_NAME] = str(val).strip()
+                    
+                    # Update IMO
+                    if val := get_best_val(row_dict, DB_IMO_COL): 
+                        sheet_df.iat[i, EXCEL_COL_IMO] = str(val).strip()
+                    
+                    # Update Handover Date
+                    if val := force_date(get_best_val(row_dict, DB_HANDOVER_COL)): 
+                        sheet_df.iat[i, EXCEL_COL_HANDOVER] = val
+                    
+                    # Update Shop Test Date (Column H)
+                    # ONLY update if "shoptested" is NOT present in the cell
+                    current_val_h = str(sheet_df.iat[i, EXCEL_COL_SHOPTEST]).lower()
+                    if "shoptested" not in current_val_h:
+                        if val := force_date(get_best_val(row_dict, DB_SHOPTEST_COL)): 
+                            sheet_df.iat[i, EXCEL_COL_SHOPTEST] = val
                     
                     updated_count += 1
 
@@ -93,7 +106,6 @@ if uploaded_sheet and uploaded_db:
             st.write(f"• Total Rows Processed: **{total_rows}**")
             st.write(f"• Matches Found & Updated: **{updated_count}**")
             
-            # Prepare Download
             output = io.BytesIO()
             sheet_df.to_excel(output, index=False)
             
