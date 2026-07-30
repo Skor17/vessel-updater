@@ -13,7 +13,7 @@ DB_SHOPTEST_COL = 'Shop_Test_Date'
 st.set_page_config(page_title="Vessel Data Updater", page_icon="🚢")
 
 st.title(f"🚢 Welcome, {BOSS_NAME}!")
-st.write("Processing files to update Vessel Database.")
+st.write("Processing files to update the database while preserving existing data.")
 
 uploaded_sheet = st.file_uploader("Upload Excel File (sheet_copy.xlsx)", type=['xlsx'])
 uploaded_db = st.file_uploader("Upload CSV Database (db_sample.csv)", type=['csv'])
@@ -22,29 +22,23 @@ if uploaded_sheet and uploaded_db:
     if st.button("🚀 Process & Update Data"):
         try:
             sheet_df = pd.read_excel(uploaded_sheet)
-            
-            # CRITICAL: Read CSV as string (dtype=str) to prevent time-tag auto-formatting
             db_df = pd.read_csv(uploaded_db, dtype=str)
-            db_df = db_df.fillna('') # Convert empty cells to empty strings
+            db_df = db_df.fillna('')
 
-            # ID Cleaning Function
             def clean_key(v):
                 if pd.isna(v) or v is None: return ''
                 s = str(v).strip()
                 if s.endswith('.0'): s = s[:-2]
                 return s.lower()
 
-            # Date Formatting: Force YYYY-MM-DD
             def force_date(v):
-                if not v or v.lower() == 'nan' or v.strip() == '': return ''
+                v_str = str(v).strip()
+                if not v_str or v_str.lower() == 'nan': return None
                 try:
-                    # Parse whatever is in there and force YYYY-MM-DD
-                    return pd.to_datetime(v).strftime('%Y-%m-%d')
+                    return pd.to_datetime(v_str).strftime('%Y-%m-%d')
                 except:
-                    # If it fails, return the string as-is (but stripped)
-                    return v.split(' ')[0]
+                    return v_str.split(' ')[0]
 
-            # Indexing
             db_df['CLEAN_KEY'] = db_df[DB_ID_COL].apply(clean_key)
             db_indexed = db_df.set_index('CLEAN_KEY')
 
@@ -53,29 +47,36 @@ if uploaded_sheet and uploaded_db:
                 primary = clean_key(sheet_df.iat[i, 6] if 6 < sheet_df.shape[1] else '')
                 secondary = clean_key(sheet_df.iat[i, 7] if 7 < sheet_df.shape[1] else '')
                 
-                match_id = None
-                if primary and primary in db_indexed.index:
-                    match_id = primary
-                elif secondary and secondary in db_indexed.index:
-                    match_id = secondary
+                match_id = primary if primary in db_indexed.index else (secondary if secondary in db_indexed.index else None)
 
                 if match_id:
                     row = db_indexed.loc[match_id]
                     if isinstance(row, pd.DataFrame): row = row.iloc[0]
                     
-                    # FORCED OVERWRITE: Regardless of what was there, put the new value
-                    # A = 0, C = 2, E = 4, H = 7
-                    sheet_df.iat[i, 0] = str(row.get(DB_NAME_COL, ''))
-                    sheet_df.iat[i, 2] = str(row.get(DB_IMO_COL, ''))
-                    sheet_df.iat[i, 4] = force_date(row.get(DB_HANDOVER_COL, ''))
-                    sheet_df.iat[i, 7] = force_date(row.get(DB_SHOPTEST_COL, ''))
+                    # --- CONDITIONAL OVERWRITE ---
+                    # Only update if the database value is NOT empty
+                    
+                    # Column A (Name)
+                    val = row.get(DB_NAME_COL, '')
+                    if val and str(val).strip(): sheet_df.iat[i, 0] = str(val).strip()
+                    
+                    # Column C (IMO)
+                    val = row.get(DB_IMO_COL, '')
+                    if val and str(val).strip(): sheet_df.iat[i, 2] = str(val).strip()
+                    
+                    # Column E (Handover)
+                    val = row.get(DB_HANDOVER_COL, '')
+                    formatted_val = force_date(val)
+                    if formatted_val: sheet_df.iat[i, 4] = formatted_val
+                    
+                    # Column H (Shop Test)
+                    val = row.get(DB_SHOPTEST_COL, '')
+                    formatted_val = force_date(val)
+                    if formatted_val: sheet_df.iat[i, 7] = formatted_val
                     
                     updated_count += 1
 
-            if updated_count > 0:
-                st.success(f"✅ Success! Overwrote {updated_count} rows with database data.")
-            else:
-                st.warning("No matches found. Please check if your ID columns are correct.")
+            st.success(f"✅ Success! Processed {updated_count} matches. Existing data was preserved where DB data was missing.")
             
             output = io.BytesIO()
             sheet_df.to_excel(output, index=False)
