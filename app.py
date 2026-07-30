@@ -12,7 +12,7 @@ DB_IMO_COL = 'IMO_Number'
 DB_HANDOVER_COL = 'Handover_Date'
 DB_SHOPTEST_COL = 'Shop_Test_Date' 
 
-# Exact Column Index Mapping (0-indexed: A=0, B=1, C=2, D=3, E=4, F=5, G=6, H=7)
+# Excel Column Mapping
 EXCEL_COL_NAME = 0         # Column A
 EXCEL_COL_IMO = 2          # Column C
 EXCEL_COL_HANDOVER = 4     # Column E
@@ -48,10 +48,9 @@ if uploaded_sheet and uploaded_db:
                 if not v_str or v_str.lower() in ['nan', 'nat', 'none', 'null', '']: return None
                 try:
                     dt = pd.to_datetime(v_str, errors='coerce')
-                    # If it's a date, format it. If it's a word (like "planned"), keep it.
-                    return dt.strftime('%Y-%m-%d') if pd.notna(dt) else v_str
+                    return dt.strftime('%Y-%m-%d') if pd.notna(dt) else v_str.split(' ')[0]
                 except:
-                    return v_str
+                    return v_str.split(' ')[0]
 
             def get_best_val(row_dict, target_col):
                 clean_target = target_col.replace('_', '').replace(' ', '').lower()
@@ -87,24 +86,30 @@ if uploaded_sheet and uploaded_db:
                     if val := get_best_val(row_dict, DB_IMO_COL): 
                         sheet_df.iat[i, EXCEL_COL_IMO] = str(val).strip()
                     
-                    # Update Handover Date
+                    # Update Handover Date (Keep date forced)
                     if val := force_date(get_best_val(row_dict, DB_HANDOVER_COL)): 
                         sheet_df.iat[i, EXCEL_COL_HANDOVER] = val
                     
                     # Update Shop Test Date (Column H)
-                    # ONLY update if "shoptested" is NOT present in the cell
                     current_val_h = str(sheet_df.iat[i, EXCEL_COL_SHOPTEST]).lower()
-                    if "shoptested" not in current_val_h:
-                        if val := force_date(get_best_val(row_dict, DB_SHOPTEST_COL)): 
-                            sheet_df.iat[i, EXCEL_COL_SHOPTEST] = val
                     
-                    updated_count += 1
-
+                    # ONLY update if "shoptested" is NOT already in the cell
+                    if "shoptested" not in current_val_h:
+                        val_from_db = get_best_val(row_dict, DB_SHOPTEST_COL)
+                        # Copy raw value directly, do not force format
+                        if val_from_db:
+                            sheet_df.iat[i, EXCEL_COL_SHOPTEST] = str(val_from_db).strip()
+                            updated_count += 1
+                    else:
+                        # Even if ShopTest is skipped, we still count this as an update if others changed?
+                        # I'll keep the count increment focused on actual changes.
+                        pass
+                        
             # --- SUMMARY OUTPUT ---
             st.success(f"✅ Processing complete.")
             st.write(f"**Results Summary:**")
             st.write(f"• Total Rows Processed: **{total_rows}**")
-            st.write(f"• Matches Found & Updated: **{updated_count}**")
+            st.write(f"• Rows Updated: **{updated_count}** (Matches found and data synced).")
             
             output = io.BytesIO()
             sheet_df.to_excel(output, index=False)
