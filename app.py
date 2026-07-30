@@ -69,32 +69,32 @@ if uploaded_sheet and uploaded_db:
                     
                     row_was_modified = False
 
-                    # 1. Update Name
-                    new_val = str(get_best_val(row_dict, DB_NAME_COL)).strip()
-                    if new_val and new_val != str(sheet_df.iat[i, EXCEL_COL_NAME]).strip():
-                        sheet_df.iat[i, EXCEL_COL_NAME] = new_val
+                    # 1. Update Name (Always update)
+                    new_name = str(get_best_val(row_dict, DB_NAME_COL)).strip()
+                    if new_name:
+                        sheet_df.iat[i, EXCEL_COL_NAME] = new_name
                         row_was_modified = True
 
-                    # 2. Update IMO
-                    new_val = str(get_best_val(row_dict, DB_IMO_COL)).strip()
-                    if new_val and new_val != str(sheet_df.iat[i, EXCEL_COL_IMO]).strip():
-                        sheet_df.iat[i, EXCEL_COL_IMO] = new_val
+                    # 2. Update IMO (Always update)
+                    new_imo = str(get_best_val(row_dict, DB_IMO_COL)).strip()
+                    if new_imo:
+                        sheet_df.iat[i, EXCEL_COL_IMO] = new_imo
                         row_was_modified = True
 
-                    # 3. Update Handover Date
-                    new_val = str(get_best_val(row_dict, DB_HANDOVER_COL)).strip()
-                    if new_val and new_val != str(sheet_df.iat[i, EXCEL_COL_HANDOVER]).strip():
-                        sheet_df.iat[i, EXCEL_COL_HANDOVER] = new_val
+                    # 3. Update Handover Date (Always update)
+                    new_handover = str(get_best_val(row_dict, DB_HANDOVER_COL)).strip()
+                    if new_handover:
+                        sheet_df.iat[i, EXCEL_COL_HANDOVER] = new_handover
                         row_was_modified = True
                     
                     # 4. Update Shop Test Date (Column H)
-                    current_h = str(sheet_df.iat[i, EXCEL_COL_SHOPTEST]).lower()
-                    new_h = str(get_best_val(row_dict, DB_SHOPTEST_COL)).strip()
+                    current_h_val = str(sheet_df.iat[i, EXCEL_COL_SHOPTEST]).lower()
                     
-                    # Only update if "shoptested" is NOT in the current cell AND DB has data AND it's different
-                    if "shoptested" not in current_h:
-                        if new_h and new_h != str(sheet_df.iat[i, EXCEL_COL_SHOPTEST]).strip():
-                            sheet_df.iat[i, EXCEL_COL_SHOPTEST] = new_h
+                    # If it DOES NOT say "shoptested", overwrite it with whatever the DB says
+                    if "shoptested" not in current_h_val:
+                        db_h_val = str(get_best_val(row_dict, DB_SHOPTEST_COL)).strip()
+                        if db_h_val:
+                            sheet_df.iat[i, EXCEL_COL_SHOPTEST] = db_h_val
                             row_was_modified = True
                     
                     if row_was_modified:
@@ -104,7 +104,7 @@ if uploaded_sheet and uploaded_db:
             st.success(f"✅ Processing complete.")
             st.write(f"**Results Summary:**")
             st.write(f"• Total Rows Checked: **{total_rows}**")
-            st.write(f"• Actually Updated Rows: **{updated_rows_count}**")
+            st.write(f"• Rows Actually Modified: **{updated_rows_count}**")
             
             output = io.BytesIO()
             sheet_df.to_excel(output, index=False)
