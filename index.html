@@ -10,15 +10,13 @@
         .card { background: white; padding: 40px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 100%; max-width: 500px; }
         .box { margin-bottom: 20px; border: 2px dashed #cbd5e1; padding: 20px; text-align: center; border-radius: 12px; }
         button { width: 100%; padding: 15px; background: #2563eb; color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; }
-        #status { margin-top: 15px; font-size: 14px; color: #475569; }
+        #status { margin-top: 15px; font-size: 14px; color: #475569; word-break: break-all; }
     </style>
 </head>
 <body>
 
 <div class="card">
     <h1>Welcome, Xu Zhi Jun</h1>
-    <p>Processing via Python (Pandas) in your browser.</p>
-    
     <div class="box">
         <label>1. Main Excel Sheet:</label>
         <input type="file" id="excel_in">
@@ -47,59 +45,58 @@ async def run_update(event):
     status = document.querySelector("#status")
     status.innerText = "Processing..."
     
-    # Get files from JS
-    excel_file = window.document.getElementById("excel_in").files.item(0)
-    csv_file = window.document.getElementById("csv_in").files.item(0)
-    
-    if not excel_file or not csv_file:
-        status.innerText = "Error: Please upload both files."
-        return
-
-    # Convert JS ArrayBuffers to Python Bytes
-    excel_buffer = await excel_file.arrayBuffer()
-    excel_bytes = bytes(js.Uint8Array.new(excel_buffer))
-    
-    csv_buffer = await csv_file.arrayBuffer()
-    csv_bytes = bytes(js.Uint8Array.new(csv_buffer))
-    
-    # Read files
-    sheet_df = pd.read_excel(io.BytesIO(excel_bytes))
-    db_df = pd.read_csv(io.BytesIO(csv_bytes))
-    
-    # Logic
-    db_df['CLEAN_KEY'] = db_df['DB Number'].apply(clean_val)
-    db_indexed = db_df.set_index('CLEAN_KEY')
-    
-    count = 0
-    for i in range(len(sheet_df)):
-        primary = clean_val(sheet_df.iat[i, 6] if 6 < sheet_df.shape[1] else '')
-        secondary = clean_val(sheet_df.iat[i, 7] if 7 < sheet_df.shape[1] else '')
+    try:
+        excel_file = window.document.getElementById("excel_in").files.item(0)
+        csv_file = window.document.getElementById("csv_in").files.item(0)
         
-        matched_id = primary if (primary in db_indexed.index) else (secondary if (secondary in db_indexed.index) else None)
+        # Convert to bytes
+        excel_bytes = bytes(js.Uint8Array.new(await excel_file.arrayBuffer()))
+        csv_bytes = bytes(js.Uint8Array.new(await csv_file.arrayBuffer()))
         
-        if matched_id:
-            row = db_indexed.loc[matched_id]
-            if isinstance(row, pd.DataFrame): row = row.iloc[0]
+        # Read
+        sheet_df = pd.read_excel(io.BytesIO(excel_bytes))
+        db_df = pd.read_csv(io.BytesIO(csv_bytes))
+        
+        # Logic
+        db_df['CLEAN_KEY'] = db_df['DB Number'].apply(clean_val)
+        db_indexed = db_df.set_index('CLEAN_KEY')
+        
+        count = 0
+        for i in range(len(sheet_df)):
+            primary = clean_val(sheet_df.iat[i, 6] if 6 < sheet_df.shape[1] else '')
+            secondary = clean_val(sheet_df.iat[i, 7] if 7 < sheet_df.shape[1] else '')
+            matched_id = primary if (primary in db_indexed.index) else (secondary if (secondary in db_indexed.index) else None)
             
-            sheet_df.iat[i, 0] = row.get('Vessel_Name', sheet_df.iat[i, 0])
-            sheet_df.iat[i, 2] = row.get('IMO_Number', sheet_df.iat[i, 2])
-            sheet_df.iat[i, 4] = clean_val(row.get('Handover_Date', sheet_df.iat[i, 4]))
-            sheet_df.iat[i, 8] = clean_val(row.get('Shop_Test_Date', sheet_df.iat[i, 8]))
-            count += 1
-            
-    # Export
-    output = io.BytesIO()
-    sheet_df.to_excel(output, index=False)
-    
-    # Download
-    blob = js.Blob.new([output.getvalue()], {type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})
-    url = js.URL.createObjectURL(blob)
-    anchor = window.document.createElement("a")
-    anchor.href = url
-    anchor.download = "sheet_updated_audited.xlsx"
-    anchor.click()
-    
-    status.innerText = f"Done! Updated {count} rows."
+            if matched_id:
+                row = db_indexed.loc[matched_id]
+                if isinstance(row, pd.DataFrame): row = row.iloc[0]
+                sheet_df.iat[i, 0] = row.get('Vessel_Name', sheet_df.iat[i, 0])
+                sheet_df.iat[i, 2] = row.get('IMO_Number', sheet_df.iat[i, 2])
+                sheet_df.iat[i, 4] = clean_val(row.get('Handover_Date', sheet_df.iat[i, 4]))
+                sheet_df.iat[i, 8] = clean_val(row.get('Shop_Test_Date', sheet_df.iat[i, 8]))
+                count += 1
+        
+        # Write to BytesIO with explicit engine
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            sheet_df.to_excel(writer, index=False)
+        
+        # Get raw bytes
+        excel_data = output.getvalue()
+        
+        # Debugging step: Tell us the size
+        status.innerText = f"Generated file size: {len(excel_data)} bytes. Starting download..."
+        
+        # Download
+        blob = js.Blob.new([excel_data], {type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})
+        url = js.URL.createObjectURL(blob)
+        anchor = window.document.createElement("a")
+        anchor.href = url
+        anchor.download = "sheet_updated_audited.xlsx"
+        anchor.click()
+        
+    except Exception as e:
+        status.innerText = f"Error: {str(e)}"
 </script>
 
 </body>
