@@ -22,34 +22,34 @@ if uploaded_sheet and uploaded_db:
     if st.button("🚀 Process & Update Data"):
         try:
             sheet_df = pd.read_excel(uploaded_sheet)
-            db_df = pd.read_csv(uploaded_db)
+            
+            # CRITICAL: Read CSV as string (dtype=str) to prevent time-tag auto-formatting
+            db_df = pd.read_csv(uploaded_db, dtype=str)
+            db_df = db_df.fillna('') # Convert empty cells to empty strings
 
-            # --- BETTER CLEANING ---
+            # ID Cleaning Function
             def clean_key(v):
                 if pd.isna(v) or v is None: return ''
                 s = str(v).strip()
-                # Remove .0 if it's a numeric ID read as a float
-                if s.endswith('.0'):
-                    s = s[:-2]
+                if s.endswith('.0'): s = s[:-2]
                 return s.lower()
 
-            def format_date_strict(v):
-                if pd.isna(v) or v == '': return ''
+            # Date Formatting: Force YYYY-MM-DD
+            def force_date(v):
+                if not v or v.lower() == 'nan' or v.strip() == '': return ''
                 try:
+                    # Parse whatever is in there and force YYYY-MM-DD
                     return pd.to_datetime(v).strftime('%Y-%m-%d')
                 except:
-                    return str(v).split(' ')[0]
+                    # If it fails, return the string as-is (but stripped)
+                    return v.split(' ')[0]
 
             # Indexing
             db_df['CLEAN_KEY'] = db_df[DB_ID_COL].apply(clean_key)
             db_indexed = db_df.set_index('CLEAN_KEY')
 
-            # --- DEBUGGING PREVIEW ---
-            st.info(f"Looking for matches... Database keys found: {len(db_indexed)}")
-            
             updated_count = 0
             for i in range(len(sheet_df)):
-                # Clean IDs exactly same way as database
                 primary = clean_key(sheet_df.iat[i, 6] if 6 < sheet_df.shape[1] else '')
                 secondary = clean_key(sheet_df.iat[i, 7] if 7 < sheet_df.shape[1] else '')
                 
@@ -63,26 +63,19 @@ if uploaded_sheet and uploaded_db:
                     row = db_indexed.loc[match_id]
                     if isinstance(row, pd.DataFrame): row = row.iloc[0]
                     
-                    # Update Columns (0=A, 2=C, 4=E, 7=H)
-                    new_name = row.get(DB_NAME_COL)
-                    if pd.notna(new_name): sheet_df.iat[i, 0] = str(new_name).strip()
-                    
-                    new_imo = row.get(DB_IMO_COL)
-                    if pd.notna(new_imo): sheet_df.iat[i, 2] = str(new_imo).strip()
-                    
-                    new_handover = row.get(DB_HANDOVER_COL)
-                    if pd.notna(new_handover): sheet_df.iat[i, 4] = format_date_strict(new_handover)
-                    
-                    new_shoptest = row.get(DB_SHOPTEST_COL)
-                    if pd.notna(new_shoptest): sheet_df.iat[i, 7] = format_date_strict(new_shoptest)
+                    # FORCED OVERWRITE: Regardless of what was there, put the new value
+                    # A = 0, C = 2, E = 4, H = 7
+                    sheet_df.iat[i, 0] = str(row.get(DB_NAME_COL, ''))
+                    sheet_df.iat[i, 2] = str(row.get(DB_IMO_COL, ''))
+                    sheet_df.iat[i, 4] = force_date(row.get(DB_HANDOVER_COL, ''))
+                    sheet_df.iat[i, 7] = force_date(row.get(DB_SHOPTEST_COL, ''))
                     
                     updated_count += 1
 
-            if updated_count == 0:
-                st.warning("Processed 0 rows. No matching IDs were found between your Excel and CSV.")
-                st.write("Make sure the IDs in Excel Column G/H match the 'DB Number' column in the CSV.")
+            if updated_count > 0:
+                st.success(f"✅ Success! Overwrote {updated_count} rows with database data.")
             else:
-                st.success(f"✅ Success! Updated {updated_count} rows.")
+                st.warning("No matches found. Please check if your ID columns are correct.")
             
             output = io.BytesIO()
             sheet_df.to_excel(output, index=False)
