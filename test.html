@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Vessel Data Updater</title>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #f0f2f5; display: flex; justify-content: center; padding-top: 50px; }
+        .card { background: white; padding: 40px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 100%; max-width: 500px; }
+        h1 { color: #1e293b; margin-top: 0; font-size: 24px; }
+        p { color: #64748b; font-size: 14px; margin-bottom: 25px; }
+        .upload-box { border: 2px dashed #cbd5e1; padding: 20px; text-align: center; border-radius: 12px; margin-bottom: 20px; transition: 0.3s; cursor: pointer; position: relative; }
+        .upload-box:hover { border-color: #3b82f6; background: #f8fafc; }
+        .upload-box input { position: absolute; width: 100%; height: 100%; top: 0; left: 0; opacity: 0; cursor: pointer; }
+        .label-text { font-weight: 600; color: #334155; display: block; margin-bottom: 5px; }
+        .instruction-text { font-size: 12px; color: #94a3b8; }
+        .status-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; margin-top: 10px; background: #e2e8f0; }
+        button { width: 100%; padding: 15px; background: #2563eb; color: white; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 16px; margin-top: 10px; }
+        button:disabled { background: #cbd5e1; cursor: not-allowed; }
+        #message { margin-top: 20px; padding: 15px; border-radius: 8px; text-align: center; display: none; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h1>Welcome, Xu Zhi Jun</h1>
+    <p>Please select the two files below to update your vessel database automatically. Your data stays on your computer at all times.</p>
+
+    <div class="upload-box" id="zone1">
+        <span class="label-text">1. Main Excel Sheet</span>
+        <span class="instruction-text">Upload the file you want to update (e.g., sheet_copy.xlsx)</span>
+        <input type="file" id="file1" accept=".xlsx,.xls">
+        <div class="status-badge" id="stat1">Pending...</div>
+    </div>
+
+    <div class="upload-box" id="zone2">
+        <span class="label-text">2. WinDB CSV Database</span>
+        <span class="instruction-text">Upload the CSV data source (e.g., db_sample.csv)</span>
+        <input type="file" id="file2" accept=".csv">
+        <div class="status-badge" id="stat2">Pending...</div>
+    </div>
+
+    <button id="btn" disabled>Process & Download Updated Excel</button>
+    <div id="message"></div>
+</div>
+
+<script>
+    let f1 = null, f2 = null;
+    
+    document.getElementById('file1').onchange = (e) => { f1 = e.target.files[0]; document.getElementById('stat1').innerText = "✓ Selected: " + f1.name; check(); };
+    document.getElementById('file2').onchange = (e) => { f2 = e.target.files[0]; document.getElementById('stat2').innerText = "✓ Selected: " + f2.name; check(); };
+
+    function check() { if(f1 && f2) document.getElementById('btn').disabled = false; }
+
+    document.getElementById('btn').onclick = async () => {
+        const msg = document.getElementById('message');
+        msg.style.display = 'block'; msg.style.background = '#dbeafe'; msg.innerText = "Processing...";
+        
+        try {
+            const wb = XLSX.read(await f1.arrayBuffer(), {type:'array'});
+            const csv = XLSX.read(await f2.text(), {type:'string'}).Sheets.Sheet1;
+            const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, defval:''});
+            const db = XLSX.utils.sheet_to_json(csv, {defval:''});
+            
+            const map = new Map();
+            db.forEach(r => map.set(String(r['DB Number'] || r['DB_Number'] || Object.values(r)[0]).trim().replace('.0',''), r));
+
+            let count = 0;
+            for(let i=1; i<data.length; i++) {
+                const row = data[i];
+                const key = String(row[6]).trim().replace('.0','') || String(row[7]).trim().replace('.0','');
+                const match = map.get(key);
+                if(match) {
+                    row[0] = match['Vessel_Name'] || match['Vessel Name'] || row[0];
+                    row[2] = match['IMO_Number'] || match['IMO Number'] || row[2];
+                    row[4] = (match['Handover_Date'] || match['Handover Date'] || '').replace(' 00:00:00','');
+                    row[8] = (match['Shop_Test_Date'] || match['Shop Test Date'] || '').replace(' 00:00:00','');
+                    count++;
+                }
+            }
+            
+            wb.Sheets[wb.SheetNames[0]] = XLSX.utils.aoa_to_sheet(data);
+            XLSX.writeFile(wb, 'sheet_updated_audited.xlsx');
+            msg.style.background = '#dcfce7'; msg.innerText = "Success! Updated " + count + " rows.";
+        } catch(e) { msg.style.background = '#fee2e2'; msg.innerText = "Error: Please check file formats."; }
+    };
+</script>
+
+</body>
+</html>
