@@ -24,33 +24,35 @@ if uploaded_sheet and uploaded_db:
             sheet_df = pd.read_excel(uploaded_sheet)
             db_df = pd.read_csv(uploaded_db)
 
-            # Robust cleaning: Converts everything to string, strips whitespace, lowers case
+            # --- BETTER CLEANING ---
             def clean_key(v):
-                if pd.isna(v): return ''
-                return str(v).strip().lower()
+                if pd.isna(v) or v is None: return ''
+                s = str(v).strip()
+                # Remove .0 if it's a numeric ID read as a float
+                if s.endswith('.0'):
+                    s = s[:-2]
+                return s.lower()
 
-            # Aggressive Date formatting: Force YYYY-MM-DD and remove time
             def format_date_strict(v):
                 if pd.isna(v) or v == '': return ''
-                # Try to parse as date
                 try:
                     return pd.to_datetime(v).strftime('%Y-%m-%d')
                 except:
-                    # Fallback: if it's already a string like "2024-01-01 00:00:00", split it
-                    s = str(v).split(' ')[0]
-                    return s
+                    return str(v).split(' ')[0]
 
-            # Indexing (using the aggressive clean_key)
+            # Indexing
             db_df['CLEAN_KEY'] = db_df[DB_ID_COL].apply(clean_key)
             db_indexed = db_df.set_index('CLEAN_KEY')
 
+            # --- DEBUGGING PREVIEW ---
+            st.info(f"Looking for matches... Database keys found: {len(db_indexed)}")
+            
             updated_count = 0
             for i in range(len(sheet_df)):
-                # Clean the IDs in the Excel sheet exactly the same way
+                # Clean IDs exactly same way as database
                 primary = clean_key(sheet_df.iat[i, 6] if 6 < sheet_df.shape[1] else '')
                 secondary = clean_key(sheet_df.iat[i, 7] if 7 < sheet_df.shape[1] else '')
                 
-                # Try to find a match
                 match_id = None
                 if primary and primary in db_indexed.index:
                     match_id = primary
@@ -61,7 +63,7 @@ if uploaded_sheet and uploaded_db:
                     row = db_indexed.loc[match_id]
                     if isinstance(row, pd.DataFrame): row = row.iloc[0]
                     
-                    # Apply changes ONLY if data exists in DB
+                    # Update Columns (0=A, 2=C, 4=E, 7=H)
                     new_name = row.get(DB_NAME_COL)
                     if pd.notna(new_name): sheet_df.iat[i, 0] = str(new_name).strip()
                     
@@ -76,7 +78,11 @@ if uploaded_sheet and uploaded_db:
                     
                     updated_count += 1
 
-            st.success(f"✅ Success! Updated {updated_count} rows.")
+            if updated_count == 0:
+                st.warning("Processed 0 rows. No matching IDs were found between your Excel and CSV.")
+                st.write("Make sure the IDs in Excel Column G/H match the 'DB Number' column in the CSV.")
+            else:
+                st.success(f"✅ Success! Updated {updated_count} rows.")
             
             output = io.BytesIO()
             sheet_df.to_excel(output, index=False)
