@@ -2,49 +2,72 @@ import streamlit as st
 import pandas as pd
 import io
 
-st.title("Vessel Data Processor")
-st.write("Upload your Excel sheet and CSV database to merge.")
+st.set_page_config(page_title="Vessel Data Processor", layout="wide")
+st.title("🚢 Vessel Data Processor")
+st.write("Upload your files below. The processor will only update columns A through H.")
 
-# File Uploader
-sheet_file = st.file_uploader("Upload Excel file (sheet_copy.xlsx)", type=['xlsx'])
-db_file = st.file_uploader("Upload CSV database (db_sample.csv)", type=['csv'])
+# --- FILE UPLOADS ---
+col1, col2 = st.columns(2)
+with col1:
+    sheet_file = st.file_uploader("1. Upload Excel sheet (Target)", type=['xlsx'])
+with col2:
+    db_file = st.file_uploader("2. Upload CSV Database (Source)", type=['csv'])
 
 if sheet_file and db_file:
-    if st.button("Process Data"):
-        # Load data
-        sheet_df = pd.read_excel(sheet_file)
-        db_df = pd.read_csv(db_file)
-        
-        # --- YOUR LOGIC HERE ---
-        # (I've kept your exact cleaning logic)
-        WINDB_KEY_COL = 'DB Number'; WINDB_NAME_COL = 'Vessel_Name'
-        WINDB_IMO_COL = 'IMO_Number'; WINDB_HANDOVER_COL = 'Handover_Date'
-        WINDB_SHOPTEST_COL = 'Shop_Test_Date'
+    # Load files
+    sheet_df = pd.read_excel(sheet_file)
+    db_df = pd.read_csv(db_file)
+    
+    # --- PREVIEW AREA ---
+    with st.expander("Click to preview data (To verify column names)"):
+        st.write("Database Preview:", db_df.head(2))
+    
+    # --- DYNAMIC MAPPING ---
+    st.subheader("Map your Database Columns")
+    db_cols = db_df.columns.tolist()
+    sheet_cols = sheet_df.columns.tolist()
 
+    # User picks which columns to use
+    id_col = st.selectbox("Which DB column contains the ID (Key)?", db_cols)
+    name_col = st.selectbox("Database column for Vessel Name:", db_cols)
+    imo_col = st.selectbox("Database column for IMO Number:", db_cols)
+    handover_col = st.selectbox("Database column for Handover Date:", db_cols)
+    shoptest_col = st.selectbox("Database column for Shop Test Date (Select Column H):", db_cols)
+    
+    st.write("---")
+    sheet_id_col = st.selectbox("Which Excel column contains the ID (to match)?", sheet_cols)
+
+    if st.button("Process Data"):
+        # Processing Logic
         def clean_val(v):
             if pd.isna(v) or v is None: return ''
             s = str(v).strip()
             if s.endswith('.0'): s = s[:-2]
             return s.replace(' 00:00:00', '').strip()
 
-        db_df['CLEAN_KEY'] = db_df[WINDB_KEY_COL].apply(clean_val)
+        # Index the database
+        db_df['CLEAN_KEY'] = db_df[id_col].apply(clean_val)
         db_indexed = db_df.set_index('CLEAN_KEY')
 
+        # Update Loop
+        updated_count = 0
         for i in range(len(sheet_df)):
-            primary_db = clean_val(sheet_df.iat[i, 6] if 6 < sheet_df.shape[1] else '')
-            secondary_db = clean_val(sheet_df.iat[i, 7] if 7 < sheet_df.shape[1] else '')
-            matched_id = primary_db if (primary_db in db_indexed.index) else (secondary_db if (secondary_db in db_indexed.index) else None)
+            key = clean_val(sheet_df.at[i, sheet_id_col])
+            
+            if key in db_indexed.index:
+                row = db_indexed.loc[key]
+                if isinstance(row, pd.DataFrame): row = row.iloc[0] # Handle duplicates
+                
+                # Update specific columns
+                sheet_df.at[i, 'Vessel_Name'] = row[name_col]
+                sheet_df.at[i, 'IMO_Number'] = row[imo_col]
+                sheet_df.at[i, 'Handover_Date'] = row[handover_col]
+                sheet_df.at[i, 'Shop_Test_Date'] = row[shoptest_col]
+                
+                updated_count += 1
 
-            if matched_id:
-                db_row = db_indexed.loc[matched_id]
-                if isinstance(db_row, pd.DataFrame): db_row = db_row.iloc[0]
-                sheet_df.iat[i, 0] = clean_val(db_row.get(WINDB_NAME_COL))
-                sheet_df.iat[i, 2] = clean_val(db_row.get(WINDB_IMO_COL))
-                sheet_df.iat[i, 4] = clean_val(db_row.get(WINDB_HANDOVER_COL))
-                sheet_df.iat[i, 8] = clean_val(db_row.get(WINDB_SHOPTEST_COL))
-
-        # --- DOWNLOAD ---
+        # Download
         output = io.BytesIO()
         sheet_df.to_excel(output, index=False)
-        st.download_button("Download Updated File", data=output.getvalue(), file_name="sheet_updated.xlsx")
-        st.success("Done!")
+        st.success(f"Done! Updated {updated_count} rows.")
+        st.download_button("Download Updated File", data=output.getvalue(), file_name="sheet_updated_audited.xlsx")
