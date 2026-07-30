@@ -10,19 +10,10 @@ DB_IMO_COL = 'IMO_Number'
 DB_HANDOVER_COL = 'Handover_Date'
 DB_SHOPTEST_COL = 'Shop_Test_Date' 
 
-# --- PAGE SETUP ---
 st.set_page_config(page_title="Vessel Data Updater", page_icon="🚢")
 
-st.markdown("""
-    <style>
-    .main { background-color: #f5f7f9; }
-    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #007bff; color: white; font-weight: bold; }
-    </style>
-    """, unsafe_allow_html=True)
-
 st.title(f"🚢 Welcome, {BOSS_NAME}!")
-st.subheader("Vessel Database Updater")
-st.write("Upload your files below to sync the database.")
+st.write("Processing files to update Vessel Database.")
 
 uploaded_sheet = st.file_uploader("Upload Excel File (sheet_copy.xlsx)", type=['xlsx'])
 uploaded_db = st.file_uploader("Upload CSV Database (db_sample.csv)", type=['csv'])
@@ -33,40 +24,55 @@ if uploaded_sheet and uploaded_db:
             sheet_df = pd.read_excel(uploaded_sheet)
             db_df = pd.read_csv(uploaded_db)
 
-            # Cleanup helper
-            def clean_val(v):
-                if pd.isna(v) or v is None: return ''
-                s = str(v).strip()
-                if s.endswith('.0'): s = s[:-2]
-                return s.replace(' 00:00:00', '').strip()
+            # Robust cleaning: Converts everything to string, strips whitespace, lowers case
+            def clean_key(v):
+                if pd.isna(v): return ''
+                return str(v).strip().lower()
 
-            # Date formatter
-            def format_date(v):
+            # Aggressive Date formatting: Force YYYY-MM-DD and remove time
+            def format_date_strict(v):
+                if pd.isna(v) or v == '': return ''
+                # Try to parse as date
                 try:
-                    # Convert to datetime object and format as YYYY-MM-DD
                     return pd.to_datetime(v).strftime('%Y-%m-%d')
                 except:
-                    return clean_val(v) # Fallback if not a date
+                    # Fallback: if it's already a string like "2024-01-01 00:00:00", split it
+                    s = str(v).split(' ')[0]
+                    return s
 
-            # Indexing
-            db_df['CLEAN_KEY'] = db_df[DB_ID_COL].apply(clean_val)
+            # Indexing (using the aggressive clean_key)
+            db_df['CLEAN_KEY'] = db_df[DB_ID_COL].apply(clean_key)
             db_indexed = db_df.set_index('CLEAN_KEY')
 
             updated_count = 0
             for i in range(len(sheet_df)):
-                primary = clean_val(sheet_df.iat[i, 6] if 6 < sheet_df.shape[1] else '')
-                secondary = clean_val(sheet_df.iat[i, 7] if 7 < sheet_df.shape[1] else '')
-                match = primary if primary in db_indexed.index else (secondary if secondary in db_indexed.index else None)
+                # Clean the IDs in the Excel sheet exactly the same way
+                primary = clean_key(sheet_df.iat[i, 6] if 6 < sheet_df.shape[1] else '')
+                secondary = clean_key(sheet_df.iat[i, 7] if 7 < sheet_df.shape[1] else '')
+                
+                # Try to find a match
+                match_id = None
+                if primary and primary in db_indexed.index:
+                    match_id = primary
+                elif secondary and secondary in db_indexed.index:
+                    match_id = secondary
 
-                if match:
-                    row = db_indexed.loc[match]
+                if match_id:
+                    row = db_indexed.loc[match_id]
                     if isinstance(row, pd.DataFrame): row = row.iloc[0]
                     
-                    # Apply changes ONLY to specific columns (A, C, E, H)
-                    sheet_df.iat[i, 0] = clean_val(row.get(DB_NAME_COL))      # Col A
-                    sheet_df.iat[i, 2] = clean_val(row.get(DB_IMO_COL))       # Col C
-                    sheet_df.iat[i, 4] = format_date(row.get(DB_HANDOVER_COL)) # Col E (Handover)
-                    sheet_df.iat[i, 7] = clean_val(row.get(DB_SHOPTEST_COL))   # Col H (Shop Test)
+                    # Apply changes ONLY if data exists in DB
+                    new_name = row.get(DB_NAME_COL)
+                    if pd.notna(new_name): sheet_df.iat[i, 0] = str(new_name).strip()
+                    
+                    new_imo = row.get(DB_IMO_COL)
+                    if pd.notna(new_imo): sheet_df.iat[i, 2] = str(new_imo).strip()
+                    
+                    new_handover = row.get(DB_HANDOVER_COL)
+                    if pd.notna(new_handover): sheet_df.iat[i, 4] = format_date_strict(new_handover)
+                    
+                    new_shoptest = row.get(DB_SHOPTEST_COL)
+                    if pd.notna(new_shoptest): sheet_df.iat[i, 7] = format_date_strict(new_shoptest)
                     
                     updated_count += 1
 
