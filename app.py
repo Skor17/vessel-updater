@@ -55,7 +55,7 @@ if uploaded_sheet and uploaded_db:
             db_indexed = db_df.set_index('CLEAN_KEY')
 
             # --- UPDATE LOOP ---
-            updated_count = 0
+            updated_rows_count = 0
             total_rows = len(sheet_df)
             
             for i in range(total_rows):
@@ -64,37 +64,47 @@ if uploaded_sheet and uploaded_db:
                 match_id = primary if primary in db_indexed.index else (secondary if secondary in db_indexed.index else None)
 
                 if match_id:
-                    # WE FOUND A MATCH
-                    updated_count += 1
                     row = db_indexed.loc[match_id]
                     row_dict = row.to_dict() if not isinstance(row, pd.DataFrame) else {col: row[col].tolist()[-1] for col in row.columns}
                     
-                    # Update Vessel Name
-                    if val := get_best_val(row_dict, DB_NAME_COL): 
-                        sheet_df.iat[i, EXCEL_COL_NAME] = str(val).strip()
+                    row_was_modified = False
+
+                    # 1. Update Name
+                    new_val = str(get_best_val(row_dict, DB_NAME_COL)).strip()
+                    if new_val and new_val != str(sheet_df.iat[i, EXCEL_COL_NAME]).strip():
+                        sheet_df.iat[i, EXCEL_COL_NAME] = new_val
+                        row_was_modified = True
+
+                    # 2. Update IMO
+                    new_val = str(get_best_val(row_dict, DB_IMO_COL)).strip()
+                    if new_val and new_val != str(sheet_df.iat[i, EXCEL_COL_IMO]).strip():
+                        sheet_df.iat[i, EXCEL_COL_IMO] = new_val
+                        row_was_modified = True
+
+                    # 3. Update Handover Date
+                    new_val = str(get_best_val(row_dict, DB_HANDOVER_COL)).strip()
+                    if new_val and new_val != str(sheet_df.iat[i, EXCEL_COL_HANDOVER]).strip():
+                        sheet_df.iat[i, EXCEL_COL_HANDOVER] = new_val
+                        row_was_modified = True
                     
-                    # Update IMO
-                    if val := get_best_val(row_dict, DB_IMO_COL): 
-                        sheet_df.iat[i, EXCEL_COL_IMO] = str(val).strip()
+                    # 4. Update Shop Test Date (Column H)
+                    current_h = str(sheet_df.iat[i, EXCEL_COL_SHOPTEST]).lower()
+                    new_h = str(get_best_val(row_dict, DB_SHOPTEST_COL)).strip()
                     
-                    # Update Handover Date (Keep raw, don't force date formatting)
-                    if val := get_best_val(row_dict, DB_HANDOVER_COL):
-                        sheet_df.iat[i, EXCEL_COL_HANDOVER] = str(val).strip()
+                    # Only update if "shoptested" is NOT in the current cell AND DB has data AND it's different
+                    if "shoptested" not in current_h:
+                        if new_h and new_h != str(sheet_df.iat[i, EXCEL_COL_SHOPTEST]).strip():
+                            sheet_df.iat[i, EXCEL_COL_SHOPTEST] = new_h
+                            row_was_modified = True
                     
-                    # Update Shop Test Date (Column H)
-                    current_val_h = str(sheet_df.iat[i, EXCEL_COL_SHOPTEST]).lower()
-                    
-                    # ONLY update if "shoptested" is NOT already in the cell
-                    if "shoptested" not in current_val_h:
-                        val_from_db = get_best_val(row_dict, DB_SHOPTEST_COL)
-                        if val_from_db:
-                            sheet_df.iat[i, EXCEL_COL_SHOPTEST] = str(val_from_db).strip()
+                    if row_was_modified:
+                        updated_rows_count += 1
             
             # --- SUMMARY OUTPUT ---
             st.success(f"✅ Processing complete.")
             st.write(f"**Results Summary:**")
             st.write(f"• Total Rows Checked: **{total_rows}**")
-            st.write(f"• Matching Vessels Updated: **{updated_count}**")
+            st.write(f"• Actually Updated Rows: **{updated_rows_count}**")
             
             output = io.BytesIO()
             sheet_df.to_excel(output, index=False)
