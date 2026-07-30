@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <title>Vessel Data Updater</title>
-    <!-- PyScript setup -->
     <link rel="stylesheet" href="https://pyscript.net/releases/2024.1.1/core.css">
     <script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
     <style>
@@ -35,8 +34,8 @@
 <script type="py" config='{"packages": ["pandas", "openpyxl"]}'>
 import pandas as pd
 import io
+import js
 from pyscript import document, window
-from js import Uint8Array, Blob, URL
 
 def clean_val(v):
     if pd.isna(v) or v is None: return ''
@@ -48,7 +47,7 @@ async def run_update(event):
     status = document.querySelector("#status")
     status.innerText = "Processing..."
     
-    # Get files from the HTML inputs
+    # Get files from JS
     excel_file = window.document.getElementById("excel_in").files.item(0)
     csv_file = window.document.getElementById("csv_in").files.item(0)
     
@@ -56,9 +55,16 @@ async def run_update(event):
         status.innerText = "Error: Please upload both files."
         return
 
-    # Read files into Pandas
-    sheet_df = pd.read_excel(io.BytesIO(await excel_file.arrayBuffer()))
-    db_df = pd.read_csv(io.BytesIO(await csv_file.arrayBuffer()))
+    # Convert JS ArrayBuffers to Python Bytes
+    excel_buffer = await excel_file.arrayBuffer()
+    excel_bytes = bytes(js.Uint8Array.new(excel_buffer))
+    
+    csv_buffer = await csv_file.arrayBuffer()
+    csv_bytes = bytes(js.Uint8Array.new(csv_buffer))
+    
+    # Read files
+    sheet_df = pd.read_excel(io.BytesIO(excel_bytes))
+    db_df = pd.read_csv(io.BytesIO(csv_bytes))
     
     # Logic
     db_df['CLEAN_KEY'] = db_df['DB Number'].apply(clean_val)
@@ -66,7 +72,6 @@ async def run_update(event):
     
     count = 0
     for i in range(len(sheet_df)):
-        # Column G (6) and H (7)
         primary = clean_val(sheet_df.iat[i, 6] if 6 < sheet_df.shape[1] else '')
         secondary = clean_val(sheet_df.iat[i, 7] if 7 < sheet_df.shape[1] else '')
         
@@ -82,13 +87,13 @@ async def run_update(event):
             sheet_df.iat[i, 8] = clean_val(row.get('Shop_Test_Date', sheet_df.iat[i, 8]))
             count += 1
             
-    # Export and Download
+    # Export
     output = io.BytesIO()
     sheet_df.to_excel(output, index=False)
     
-    # Trigger download
-    blob = Blob.new([output.getvalue()], {type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})
-    url = URL.createObjectURL(blob)
+    # Download
+    blob = js.Blob.new([output.getvalue()], {type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})
+    url = js.URL.createObjectURL(blob)
     anchor = window.document.createElement("a")
     anchor.href = url
     anchor.download = "sheet_updated_audited.xlsx"
