@@ -20,47 +20,9 @@ EXCEL_COL_PRIMARY_DB = 5   # Column F (First DB Number)
 EXCEL_COL_SECONDARY_DB = 6 # Column G (Second DB Number)
 EXCEL_COL_SHOPTEST = 7     # Column H (Shop Test Date)
 
+# Setting layout="centered" ensures the app stays contained and readable on ultra-wide screens, 
+# while naturally squeezing down perfectly for mobile screens.
 st.set_page_config(page_title="Vessel Data Updater", page_icon="🚢", layout="centered")
-
-# --- UI ENHANCEMENTS (Custom CSS) ---
-st.markdown("""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
-    
-    /* Apply modern font to the whole app */
-    html, body, [class*="st-"] {
-        font-family: 'Inter', sans-serif;
-    }
-    
-    /* Subtle nautical gradient background */
-    .stApp {
-        background-color: #f0f4f8;
-        background-image: linear-gradient(180deg, #f0f4f8 0%, #ffffff 100%);
-    }
-    
-    /* Style the main title */
-    h1 {
-        color: #1e3a5f;
-        text-align: center;
-        padding-bottom: 20px;
-    }
-    
-    /* Style buttons */
-    .stButton>button {
-        border-radius: 8px;
-        background-color: #2b5c8f;
-        color: white;
-        font-weight: 600;
-        border: none;
-        width: 100%;
-    }
-    .stButton>button:hover {
-        background-color: #1e3a5f;
-        color: white;
-        border: none;
-    }
-    </style>
-""", unsafe_allow_html=True)
 
 st.title(f"🚢 Welcome, {BOSS_NAME}!")
 
@@ -73,7 +35,8 @@ if uploaded_sheet and uploaded_db:
         st.write("Type a DB Number below to verify what the script reads from the CSV.")
         test_id = st.text_input("Enter DB Number (e.g., 12345):")
         
-    if st.button("🚀 Process & Update Data") or test_id:
+    # use_container_width=True makes the button stretch nicely to fit its container
+    if st.button("🚀 Process & Update Data", use_container_width=True) or test_id:
         try:
             sheet_df = pd.read_excel(uploaded_sheet)
             db_df = pd.read_csv(uploaded_db, dtype=str, sep=None, engine='python')
@@ -178,15 +141,23 @@ if uploaded_sheet and uploaded_db:
             # --- ENHANCED SUCCESS MESSAGE ---
             st.success(f"✅ Data Merge Complete!")
             st.info(
-                f"**Update Summary:**\n"
-                f"- **{total_rows}** total vessels checked in the Excel file.\n"
-                f"- **{updated_count}** vessels successfully found and cross-referenced with the database.\n"
-                f"- Only outdated or blank cells were updated. All existing valid data was preserved."
+                f"**Update Summary:**\n\n"
+                f"• **{total_rows}** total vessels checked in the Excel file.\n"
+                f"• **{updated_count}** vessels successfully matched with the database.\n"
+                f"• Only outdated or blank cells were updated. All existing valid data was preserved."
             )
             
             output = io.BytesIO()
             sheet_df.to_excel(output, index=False)
-            st.download_button("📥 Download Updated Excel", data=output.getvalue(), file_name="sheet_updated_audited.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            
+            # The download button is also responsive now
+            st.download_button(
+                label="📥 Download Updated Excel", 
+                data=output.getvalue(), 
+                file_name="sheet_updated_audited.xlsx", 
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
         
         except Exception as e:
             st.error(f"Error processing files: {e}")
