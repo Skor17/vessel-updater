@@ -42,22 +42,11 @@ if uploaded_sheet and uploaded_db:
                 if s.endswith('.0'): s = s[:-2]
                 return s.lower()
 
-            def force_date(v):
-                if v is None: return None
-                v_str = str(v).strip()
-                if not v_str or v_str.lower() in ['nan', 'nat', 'none', 'null', '']: return None
-                try:
-                    dt = pd.to_datetime(v_str, errors='coerce')
-                    return dt.strftime('%Y-%m-%d') if pd.notna(dt) else v_str.split(' ')[0]
-                except:
-                    return v_str.split(' ')[0]
-
             def get_best_val(row_dict, target_col):
                 clean_target = target_col.replace('_', '').replace(' ', '').lower()
                 for col_name, val in row_dict.items():
                     if col_name.replace('_', '').replace(' ', '').lower() == clean_target:
-                        if str(val).strip() and str(val).strip().lower() not in ['nan', 'nat', 'none', '']:
-                            return val
+                        return val
                 return ''
 
             # Indexing
@@ -75,6 +64,8 @@ if uploaded_sheet and uploaded_db:
                 match_id = primary if primary in db_indexed.index else (secondary if secondary in db_indexed.index else None)
 
                 if match_id:
+                    # WE FOUND A MATCH
+                    updated_count += 1
                     row = db_indexed.loc[match_id]
                     row_dict = row.to_dict() if not isinstance(row, pd.DataFrame) else {col: row[col].tolist()[-1] for col in row.columns}
                     
@@ -86,9 +77,9 @@ if uploaded_sheet and uploaded_db:
                     if val := get_best_val(row_dict, DB_IMO_COL): 
                         sheet_df.iat[i, EXCEL_COL_IMO] = str(val).strip()
                     
-                    # Update Handover Date (Keep date forced)
-                    if val := force_date(get_best_val(row_dict, DB_HANDOVER_COL)): 
-                        sheet_df.iat[i, EXCEL_COL_HANDOVER] = val
+                    # Update Handover Date (Keep raw, don't force date formatting)
+                    if val := get_best_val(row_dict, DB_HANDOVER_COL):
+                        sheet_df.iat[i, EXCEL_COL_HANDOVER] = str(val).strip()
                     
                     # Update Shop Test Date (Column H)
                     current_val_h = str(sheet_df.iat[i, EXCEL_COL_SHOPTEST]).lower()
@@ -96,20 +87,14 @@ if uploaded_sheet and uploaded_db:
                     # ONLY update if "shoptested" is NOT already in the cell
                     if "shoptested" not in current_val_h:
                         val_from_db = get_best_val(row_dict, DB_SHOPTEST_COL)
-                        # Copy raw value directly, do not force format
                         if val_from_db:
                             sheet_df.iat[i, EXCEL_COL_SHOPTEST] = str(val_from_db).strip()
-                            updated_count += 1
-                    else:
-                        # Even if ShopTest is skipped, we still count this as an update if others changed?
-                        # I'll keep the count increment focused on actual changes.
-                        pass
-                        
+            
             # --- SUMMARY OUTPUT ---
             st.success(f"✅ Processing complete.")
             st.write(f"**Results Summary:**")
-            st.write(f"• Total Rows Processed: **{total_rows}**")
-            st.write(f"• Rows Updated: **{updated_count}** (Matches found and data synced).")
+            st.write(f"• Total Rows Checked: **{total_rows}**")
+            st.write(f"• Matching Vessels Updated: **{updated_count}**")
             
             output = io.BytesIO()
             sheet_df.to_excel(output, index=False)
