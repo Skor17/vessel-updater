@@ -5,7 +5,7 @@ import io
 # --- CONFIGURATION ---
 BOSS_NAME = "Xu Zhi Jun"
 
-# Database CSV Column Names (Adjust these if the header text in your CSV is slightly different)
+# Database CSV Column Names
 DB_ID_COL = 'DB Number'
 DB_NAME_COL = 'Vessel_Name'
 DB_IMO_COL = 'IMO_Number'
@@ -20,9 +20,49 @@ EXCEL_COL_PRIMARY_DB = 5   # Column F (First DB Number)
 EXCEL_COL_SECONDARY_DB = 6 # Column G (Second DB Number)
 EXCEL_COL_SHOPTEST = 7     # Column H (Shop Test Date)
 
-st.set_page_config(page_title="Vessel Data Updater", page_icon="🚢")
+st.set_page_config(page_title="Vessel Data Updater", page_icon="🚢", layout="centered")
+
+# --- UI ENHANCEMENTS (Custom CSS) ---
+st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
+    
+    /* Apply modern font to the whole app */
+    html, body, [class*="st-"] {
+        font-family: 'Inter', sans-serif;
+    }
+    
+    /* Subtle nautical gradient background */
+    .stApp {
+        background-color: #f0f4f8;
+        background-image: linear-gradient(180deg, #f0f4f8 0%, #ffffff 100%);
+    }
+    
+    /* Style the main title */
+    h1 {
+        color: #1e3a5f;
+        text-align: center;
+        padding-bottom: 20px;
+    }
+    
+    /* Style buttons */
+    .stButton>button {
+        border-radius: 8px;
+        background-color: #2b5c8f;
+        color: white;
+        font-weight: 600;
+        border: none;
+        width: 100%;
+    }
+    .stButton>button:hover {
+        background-color: #1e3a5f;
+        color: white;
+        border: none;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 st.title(f"🚢 Welcome, {BOSS_NAME}!")
-st.write("Processing files to update the database while preserving existing data.")
 
 uploaded_sheet = st.file_uploader("Upload Excel File (sheet_copy.xlsx)", type=['xlsx'])
 uploaded_db = st.file_uploader("Upload CSV Database (db_sample.csv)", type=['csv'])
@@ -73,7 +113,7 @@ if uploaded_sheet and uploaded_db:
                     break
             
             if not db_id_actual:
-                db_id_actual = db_df.columns[0] # Fallback to 1st column if header name mismatch
+                db_id_actual = db_df.columns[0] 
 
             db_df['CLEAN_KEY'] = db_df[db_id_actual].apply(clean_key)
             db_indexed = db_df.set_index('CLEAN_KEY')
@@ -91,8 +131,10 @@ if uploaded_sheet and uploaded_db:
                 st.stop()
 
             # --- MAIN UPDATE LOOP ---
+            total_rows = len(sheet_df)
             updated_count = 0
-            for i in range(len(sheet_df)):
+            
+            for i in range(total_rows):
                 
                 # Fetch keys strictly from Column F (index 5) and Column G (index 6)
                 primary = clean_key(sheet_df.iat[i, EXCEL_COL_PRIMARY_DB] if EXCEL_COL_PRIMARY_DB < sheet_df.shape[1] else '')
@@ -116,27 +158,31 @@ if uploaded_sheet and uploaded_db:
                     else:
                         row_dict = row.to_dict()
                     
-                    # Update Vessel Name (Column A)
+                    # Update Columns securely
                     val_name = get_best_val(row_dict, DB_NAME_COL)
                     if val_name: sheet_df.iat[i, EXCEL_COL_NAME] = str(val_name).strip()
                     
-                    # Update IMO (Column C)
                     val_imo = get_best_val(row_dict, DB_IMO_COL)
                     if val_imo: sheet_df.iat[i, EXCEL_COL_IMO] = str(val_imo).strip()
                     
-                    # Update Handover Date (Column E)
                     val_handover = get_best_val(row_dict, DB_HANDOVER_COL)
                     formatted_handover = force_date(val_handover)
                     if formatted_handover: sheet_df.iat[i, EXCEL_COL_HANDOVER] = formatted_handover
                     
-                    # Update Shop Test Date (Column H)
                     val_shop = get_best_val(row_dict, DB_SHOPTEST_COL)
                     formatted_shop = force_date(val_shop)
                     if formatted_shop: sheet_df.iat[i, EXCEL_COL_SHOPTEST] = formatted_shop
                     
                     updated_count += 1
 
-            st.success(f"✅ Success! Processed {updated_count} matched vessels. Existing data preserved where DB was empty.")
+            # --- ENHANCED SUCCESS MESSAGE ---
+            st.success(f"✅ Data Merge Complete!")
+            st.info(
+                f"**Update Summary:**\n"
+                f"- **{total_rows}** total vessels checked in the Excel file.\n"
+                f"- **{updated_count}** vessels successfully found and cross-referenced with the database.\n"
+                f"- Only outdated or blank cells were updated. All existing valid data was preserved."
+            )
             
             output = io.BytesIO()
             sheet_df.to_excel(output, index=False)
